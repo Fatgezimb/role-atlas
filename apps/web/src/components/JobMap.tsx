@@ -1,12 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent, WheelEvent } from "react";
 import { LocateFixed, Minus, Plus } from "lucide-react";
-import { STATE_POINTS } from "../data/stateGeo";
+import { STATE_NAMES } from "../data/stateGeo";
+import { projectUsCoordinate, projectedPointToPercent, US_MAP_VIEWBOX, US_NATION_PATH, US_STATE_MESH_PATH, US_STATE_PATHS } from "../data/usMap";
 import type { Job, MapMarker, MapViewport, RemoteType } from "../types";
 
 const DEFAULT_VIEW = { centerX: 50, centerY: 50, zoom: 1 };
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
+const REMOTE_MARKER_OFFSETS: Record<RemoteType, { x: number; y: number }> = {
+  onsite: { x: -13, y: -9 },
+  hybrid: { x: 13, y: -9 },
+  remote_state_based: { x: -13, y: 10 },
+  remote_open_us: { x: 13, y: 10 }
+};
+
+const REMOTE_LABELS: Record<RemoteType, string> = {
+  onsite: "On-site",
+  hybrid: "Hybrid",
+  remote_state_based: "Remote state-based",
+  remote_open_us: "Remote open to US"
+};
+
+interface MarkerCluster {
+  key: string;
+  state: string | null;
+  remoteType: RemoteType;
+  primaryJobId: string;
+  count: number;
+  latitude: number;
+  longitude: number;
+  matchScore: number;
+}
 
 interface JobMapProps {
   markers: MapMarker[];
@@ -24,6 +49,9 @@ export function JobMap({ markers, selectedJobId, onSelectJob, onViewportChange, 
 
   const viewport = useMemo(() => buildViewport(view), [view]);
   const isReset = view.zoom === DEFAULT_VIEW.zoom && view.centerX === DEFAULT_VIEW.centerX && view.centerY === DEFAULT_VIEW.centerY;
+  const stateCounts = useMemo(() => buildStateCounts(markers), [markers]);
+  const remoteStates = useMemo(() => buildRemoteStates(markers), [markers]);
+  const markerClusters = useMemo(() => buildMarkerClusters(markers), [markers]);
 
   useEffect(() => {
     onViewportChange(viewport);
@@ -86,49 +114,74 @@ export function JobMap({ markers, selectedJobId, onSelectJob, onViewportChange, 
       <div
         className="map-canvas"
         style={{ "--map-scale": view.zoom, "--map-x": `${50 - view.centerX}%`, "--map-y": `${50 - view.centerY}%` } as CSSProperties}
-        aria-hidden="true"
       >
-        <svg viewBox="0 0 960 560" role="img" aria-label="Stylized United States map">
-          <path
-            className="us-land"
-            d="M116 184 188 142l86 10 78-18 92 18 94-4 80 22 88 18 92 42 42 80-26 80-88 38-84 58-130 26-126-4-116-38-116 12-88-50-52-86 22-96z"
-          />
-          <path className="state-line" d="M164 182v246M220 156v284M276 148v302M332 140v332M388 148v338M456 154v344M520 158v332M580 164v312M642 178v278M704 196v222M766 220v166" />
-          <path className="state-line" d="M142 222h604M126 278h702M126 340h706M156 388h632M190 426h536" />
-        </svg>
+        <div className="map-stage">
+          <svg className="us-map-shape" viewBox={US_MAP_VIEWBOX} role="img" aria-label="United States states map">
+            <path className="nation-shadow" d={US_NATION_PATH} />
+            <g>
+              {US_STATE_PATHS.map((state) => {
+                const count = stateCounts.get(state.code) ?? 0;
+                return (
+                  <path
+                    key={state.code}
+                    className={stateClassName({
+                      count,
+                      hasRemote: remoteStates.has(state.code),
+                      isSelected: selected?.state === state.code
+                    })}
+                    d={state.path}
+                  >
+                    <title>
+                      {state.name}
+                      {count ? `: ${count} matching ${count === 1 ? "role" : "roles"}` : ""}
+                    </title>
+                  </path>
+                );
+              })}
+            </g>
+            <path className="state-borders" d={US_STATE_MESH_PATH} />
+          </svg>
 
-        <div className="state-label-layer">
-          {STATE_POINTS.map((state) => (
-            <span key={state.code} className="state-label" style={coordinateToStyle(state.latitude, state.longitude)}>
-              {state.code}
-            </span>
-          ))}
+          <div className="state-label-layer" aria-hidden="true">
+            {US_STATE_PATHS.filter((state) => stateCounts.has(state.code) || selected?.state === state.code).map((state) => {
+              const labelPosition = projectedPointToPercent(state.labelX, state.labelY);
+              return (
+                <span
+                  key={state.code}
+                  className={`state-label ${stateCounts.has(state.code) ? "active" : ""}`}
+                  style={percentToStyle(labelPosition)}
+                >
+                  {state.code}
+                </span>
+              );
+            })}
+          </div>
+
+          <div className="marker-layer">
+            {markerClusters.map((cluster) => {
+              const active = cluster.primaryJobId === selectedJobId || (selected?.state === cluster.state && selected?.remote_type === cluster.remoteType);
+              const markerPosition = coordinateToStyle(cluster.latitude, cluster.longitude, cluster.remoteType, cluster.count);
+              const stateName = cluster.state ? STATE_NAMES[cluster.state] ?? cluster.state : "the United States";
+              return (
+                <button
+                  key={cluster.key}
+                  className={`job-marker ${cluster.remoteType} ${active ? "active" : ""}`}
+                  style={markerPosition}
+                  type="button"
+                  aria-label={`${cluster.count} ${REMOTE_LABELS[cluster.remoteType]} ${cluster.count === 1 ? "role" : "roles"} in ${stateName}`}
+                  title={`${cluster.count} ${REMOTE_LABELS[cluster.remoteType]} ${cluster.count === 1 ? "role" : "roles"} in ${stateName}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectJob(cluster.primaryJobId);
+                  }}
+                >
+                  <span>{cluster.count > 1 ? cluster.count : ""}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-
-        {markers.map((marker) => {
-          const job = jobsById.get(marker.id);
-          const active = marker.id === selectedJobId;
-          return (
-            <button
-              key={marker.id}
-              className={`job-marker ${marker.remote_type} ${active ? "active" : ""}`}
-              style={coordinateToStyle(marker.latitude, marker.longitude)}
-              type="button"
-              aria-label={`${job?.title ?? "Job"} in ${job?.location_text ?? marker.state}`}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelectJob(marker.id);
-              }}
-            >
-              {marker.count > 1 ? marker.count : ""}
-            </button>
-          );
-        })}
-
-        {selected ? (
-          <div className="selection-line" style={coordinateToStyle(selected.latitude, selected.longitude)} aria-hidden="true" />
-        ) : null}
       </div>
 
       <div className="map-controls" aria-label="Map controls" onPointerDown={(event) => event.stopPropagation()}>
@@ -145,7 +198,9 @@ export function JobMap({ markers, selectedJobId, onSelectJob, onViewportChange, 
 
       <div className="map-viewport-chip">
         <strong>{viewport.isFiltered ? "Map-filtered results" : "All states visible"}</strong>
-        <span>{Math.round(view.zoom * 100)}% zoom</span>
+        <span>
+          {stateCounts.size} states / {markers.length} roles / {Math.round(view.zoom * 100)}%
+        </span>
         {!isReset ? (
           <button type="button" onClick={recenter}>
             Reset
@@ -156,6 +211,60 @@ export function JobMap({ markers, selectedJobId, onSelectJob, onViewportChange, 
       <MapLegend />
     </section>
   );
+}
+
+function buildStateCounts(markers: MapMarker[]): Map<string, number> {
+  return markers.reduce((counts, marker) => {
+    if (marker.state) {
+      counts.set(marker.state, (counts.get(marker.state) ?? 0) + (marker.count || 1));
+    }
+    return counts;
+  }, new Map<string, number>());
+}
+
+function buildRemoteStates(markers: MapMarker[]): Set<string> {
+  return markers.reduce((states, marker) => {
+    if (marker.state && marker.remote_type.startsWith("remote")) {
+      states.add(marker.state);
+    }
+    return states;
+  }, new Set<string>());
+}
+
+function buildMarkerClusters(markers: MapMarker[]): MarkerCluster[] {
+  const clusters = new Map<string, MarkerCluster & { weightedLatitude: number; weightedLongitude: number }>();
+  for (const marker of markers) {
+    const count = marker.count || 1;
+    const key = `${marker.state ?? marker.id}:${marker.remote_type}`;
+    const existing = clusters.get(key);
+    if (existing) {
+      existing.count += count;
+      existing.weightedLatitude += marker.latitude * count;
+      existing.weightedLongitude += marker.longitude * count;
+      if (marker.match_score > existing.matchScore) {
+        existing.primaryJobId = marker.id;
+        existing.matchScore = marker.match_score;
+      }
+      existing.latitude = existing.weightedLatitude / existing.count;
+      existing.longitude = existing.weightedLongitude / existing.count;
+      continue;
+    }
+    clusters.set(key, {
+      key,
+      state: marker.state,
+      remoteType: marker.remote_type,
+      primaryJobId: marker.id,
+      count,
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+      weightedLatitude: marker.latitude * count,
+      weightedLongitude: marker.longitude * count,
+      matchScore: marker.match_score
+    });
+  }
+  return [...clusters.values()]
+    .map(({ weightedLatitude: _weightedLatitude, weightedLongitude: _weightedLongitude, ...cluster }) => cluster)
+    .sort((left, right) => right.count - left.count || right.matchScore - left.matchScore);
 }
 
 function MapLegend() {
@@ -177,6 +286,19 @@ function MapLegend() {
   );
 }
 
+function stateClassName({
+  count,
+  hasRemote,
+  isSelected
+}: {
+  count: number;
+  hasRemote: boolean;
+  isSelected: boolean;
+}): string {
+  const density = count ? Math.min(4, count) : 0;
+  return ["state-fill", `density-${density}`, hasRemote ? "remote-state" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
+}
+
 function buildViewport(view: typeof DEFAULT_VIEW): MapViewport {
   const horizontalSpan = 58 / view.zoom;
   const verticalSpan = 25 / view.zoom;
@@ -195,12 +317,21 @@ function buildViewport(view: typeof DEFAULT_VIEW): MapViewport {
   };
 }
 
-function coordinateToStyle(latitude: number, longitude: number): CSSProperties {
-  const left = ((longitude + 125) / 58) * 100;
-  const top = ((49.5 - latitude) / 25) * 100;
+function coordinateToStyle(latitude: number, longitude: number, remoteType: RemoteType, count: number): CSSProperties {
+  const { left, top } = projectUsCoordinate(latitude, longitude);
+  const offset = REMOTE_MARKER_OFFSETS[remoteType];
   return {
-    left: `${Math.min(94, Math.max(6, left))}%`,
-    top: `${Math.min(88, Math.max(10, top))}%`
+    ...percentToStyle({ left, top }),
+    "--marker-offset-x": `${offset.x}px`,
+    "--marker-offset-y": `${offset.y}px`,
+    "--marker-size": `${Math.min(46, 28 + Math.sqrt(count) * 7)}px`
+  } as CSSProperties;
+}
+
+function percentToStyle({ left, top }: { left: number; top: number }): CSSProperties {
+  return {
+    left: `${Math.min(96, Math.max(4, left))}%`,
+    top: `${Math.min(93, Math.max(5, top))}%`
   };
 }
 

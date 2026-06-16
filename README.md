@@ -70,6 +70,6 @@ The Pages build uses `VITE_STATIC_MODE=true`, so the hosted site runs as a polis
 
 ## Map And Cost Policy
 
-The default frontend map is a local static interaction layer: it uses in-repo state coordinates, SVG/CSS rendering, and no metered map tile provider. The GitHub Pages build does not require API keys, billing accounts, serverless functions, paid runners, or scheduled scraping jobs.
+The default frontend map is a local static interaction layer: it uses bundled `us-atlas` Census-derived state geometry, in-repo job coordinates, SVG/CSS rendering, and no metered map tile provider. The GitHub Pages build does not require API keys, billing accounts, serverless functions, paid runners, or scheduled scraping jobs.
 
 If you later replace the static map with a live tile provider, review that provider's pricing and usage policy before deployment.
