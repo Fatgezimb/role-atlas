@@ -1,0 +1,25 @@
+{
+  "name": "role-atlas",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev -- --host 127.0.0.1",
+    "dev:api": "PYTHONPATH=services/api:services/worker uvicorn role_atlas_api.main:app --host 127.0.0.1 --port 8000 --reload",
+    "build": "npm --workspace apps/web run build",
+    "build:pages": "npm --workspace apps/web run build:pages",
+    "preview": "npm --workspace apps/web run preview -- --host 127.0.0.1",
+    "preview:pages": "python3 -m http.server 4173 --bind 127.0.0.1 --directory docs",
+    "lint": "npm --workspace apps/web run lint",
+    "qa:links": "node scripts/check-links.mjs",
+    "qa:visual": "node scripts/qa-visual.mjs",
+    "test:web": "npm --workspace apps/web run test -- --run",
+    "test:api": "PYTHONPATH=services/api:services/worker pytest services/api/tests services/worker/tests",
+    "test": "npm run test:api && npm run test:web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
