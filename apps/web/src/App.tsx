@@ -3,11 +3,13 @@ import { AnalyticsStrip } from "./components/AnalyticsStrip";
 import { FilterBar } from "./components/FilterBar";
 import { JobDetailModal } from "./components/JobDetailModal";
 import { JobMap } from "./components/JobMap";
+import { PayBucketModal } from "./components/PayBucketModal";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { searchJobs, startScrapeRun, updateJobStatus } from "./lib/api";
 import { buildAnalytics, buildDemoSearchResponse } from "./data/demoJobs";
+import { jobsForPayBucket } from "./lib/payBuckets";
 import type { Job, MapViewport, SearchFilters, SearchResponse } from "./types";
 
 const DEFAULT_QUERY = "Find remote BCBA contract roles over $70/hr with sign-on bonus";
@@ -28,6 +30,7 @@ export function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [isScraping, setIsScraping] = useState(false);
   const [mapViewport, setMapViewport] = useState<MapViewport | null>(null);
+  const [selectedPayBucket, setSelectedPayBucket] = useState<string | null>(null);
 
   const visibleJobs = useMemo(() => {
     if (!mapViewport?.isFiltered) {
@@ -44,6 +47,7 @@ export function App() {
   );
   const selectedIndex = selectedJob ? visibleJobs.findIndex((job) => job.id === selectedJob.id) : -1;
   const jobsById = useMemo(() => new Map(searchResponse.jobs.map((job) => [job.id, job])), [searchResponse.jobs]);
+  const payBucketJobs = useMemo(() => selectedPayBucket ? jobsForPayBucket(visibleJobs, selectedPayBucket) : [], [selectedPayBucket, visibleJobs]);
 
   const syncUrl = useCallback((nextQuery: string, nextSelectedJobId: string | null) => {
     const params = new URLSearchParams();
@@ -64,6 +68,7 @@ export function App() {
     const response = await searchJobs({ query: nextQuery, filters: effectiveFilters, sort: "best_match" });
     setSearchResponse(response);
     setMapViewport(null);
+    setSelectedPayBucket(null);
     setIsSearching(false);
     syncUrl(nextQuery, nextSelectedJobId);
   }, [filters, query, selectedJobId, syncUrl]);
@@ -75,6 +80,7 @@ export function App() {
   const selectJob = useCallback(
     (jobOrId: Job | string) => {
       const id = typeof jobOrId === "string" ? jobOrId : jobOrId.id;
+      setSelectedPayBucket(null);
       setSelectedJobId(id);
       syncUrl(query, id);
     },
@@ -91,6 +97,7 @@ export function App() {
       setFilters(nextFilters);
       setQuery(nextQuery);
       setSelectedJobId(null);
+      setSelectedPayBucket(null);
       void runSearch(nextQuery, nextFilters, null);
     },
     [query, runSearch]
@@ -150,7 +157,7 @@ export function App() {
               onSelectJob={selectJob}
               onViewportChange={setMapViewport}
             />
-            <AnalyticsStrip analytics={visibleAnalytics} />
+            <AnalyticsStrip analytics={visibleAnalytics} onPayBucketSelect={setSelectedPayBucket} />
           </div>
           <ResultsPanel
             jobs={visibleJobs}
@@ -171,6 +178,15 @@ export function App() {
           onPatch={(job, patch) => void patchJob(job, patch)}
           onNext={() => navigateModal(1)}
           onPrev={() => navigateModal(-1)}
+        />
+      ) : null}
+      {selectedPayBucket ? (
+        <PayBucketModal
+          bucket={selectedPayBucket}
+          jobs={payBucketJobs}
+          totalVisibleJobs={visibleJobs.length}
+          onClose={() => setSelectedPayBucket(null)}
+          onSelectJob={selectJob}
         />
       ) : null}
     </div>

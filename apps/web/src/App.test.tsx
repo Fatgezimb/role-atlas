@@ -61,4 +61,21 @@ describe("Role Atlas app", () => {
     await waitFor(() => expect(screen.getByText("Map-filtered results")).toBeInTheDocument());
     expect(screen.getByText(/total in search/i)).toBeInTheDocument();
   });
+
+  it("opens pay distribution buckets with matching roles and can drill into role detail", async () => {
+    render(<App />);
+
+    await screen.findAllByText("Remote BCBA - Contract");
+    fireEvent.click(screen.getByRole("button", { name: /Open \$90-\$99\/hr pay bucket/i }));
+
+    const payDialog = await screen.findByRole("dialog", { name: "Roles in $90-$99/hr" });
+    expect(within(payDialog).getByText("roles in this bucket")).toBeInTheDocument();
+    expect(within(payDialog).getAllByText("Open role")[0]).toBeInTheDocument();
+
+    fireEvent.click(within(payDialog).getAllByText("Open role")[0]);
+
+    const detailDialog = await screen.findByRole("dialog", { name: "Remote BCBA - Contract" });
+    expect(within(detailDialog).getByText("License eligibility")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Roles in $90-$99/hr" })).not.toBeInTheDocument();
+  });
 });

@@ -32,6 +32,7 @@ try {
     await page.waitForSelector("[data-testid^='job-card-']", { timeout: 15_000 });
     await exerciseFilters(page);
     await checkPage(page, viewport.name, failures);
+    await exercisePayBucketModal(page, viewport.name, failures);
 
     const firstCard = page.locator("[data-testid^='job-card-']").first();
     await firstCard.click();
@@ -85,6 +86,21 @@ async function exerciseFilters(page) {
   await page.waitForFunction(() => document.querySelectorAll("[data-testid^='job-card-']").length >= 10);
 }
 
+async function exercisePayBucketModal(page, viewportName, failures) {
+  const payBucketButton = page.locator(".histogram-bar:not(:disabled)").filter({ hasText: "$90" }).first();
+  await payBucketButton.scrollIntoViewIfNeeded();
+  await payBucketButton.click();
+  await page.getByRole("dialog", { name: "Roles in $90-$99/hr", exact: true }).waitFor({ timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelectorAll(".pay-role-card").length > 0);
+  await checkPage(page, `${viewportName}-pay-modal`, failures);
+  await page.screenshot({ path: `${screenshotDir}/${viewportName}-pay-modal.png`, fullPage: true });
+
+  await page.getByRole("button", { name: "Open role", exact: true }).first().click();
+  await page.getByRole("dialog").filter({ hasText: "License eligibility" }).waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: /Close/i }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached", timeout: 10_000 });
+}
+
 async function checkPage(page, context, failures) {
   const pageIssues = await page.evaluate(() => {
     const issues = [];
@@ -105,6 +121,15 @@ async function checkPage(page, context, failures) {
       ".remote-label",
       ".metric-card",
       ".chart-card",
+      ".histogram-bar",
+      ".pay-modal",
+      ".pay-modal-top",
+      ".pay-modal-summary div",
+      ".pay-role-card",
+      ".pay-role-main",
+      ".pay-role-meta",
+      ".pay-role-tags span",
+      ".pay-role-actions",
       ".detail-modal",
       ".detail-top",
       ".detail-actions button",

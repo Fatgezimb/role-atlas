@@ -1,12 +1,14 @@
 import { BarChart3, CircleDollarSign, LineChart, UsersRound } from "lucide-react";
 import type { ReactNode } from "react";
+import { payBucketByLabel } from "../lib/payBuckets";
 import type { AnalyticsSummary } from "../types";
 
 interface AnalyticsStripProps {
   analytics: AnalyticsSummary;
+  onPayBucketSelect: (bucket: string) => void;
 }
 
-export function AnalyticsStrip({ analytics }: AnalyticsStripProps) {
+export function AnalyticsStrip({ analytics, onPayBucketSelect }: AnalyticsStripProps) {
   return (
     <section className="analytics-strip" aria-label="Search analytics">
       <MetricCard label="Matching roles" value={analytics.matching_roles.toLocaleString()} delta="+128 (+11%)" />
@@ -17,7 +19,7 @@ export function AnalyticsStrip({ analytics }: AnalyticsStripProps) {
       <MetricCard label="Benefits (avg)" value={analytics.benefits_average.toFixed(1)} helper="of 10 offered" icon={<UsersRound size={18} />} />
       <TrendCard analytics={analytics} />
       <StateCard analytics={analytics} />
-      <PayDistribution analytics={analytics} />
+      <PayDistribution analytics={analytics} onPayBucketSelect={onPayBucketSelect} />
     </section>
   );
 }
@@ -61,7 +63,7 @@ function MiniDonut({ split }: { split?: boolean }) {
   );
 }
 
-function TrendCard({ analytics }: AnalyticsStripProps) {
+function TrendCard({ analytics }: Pick<AnalyticsStripProps, "analytics">) {
   const max = Math.max(...analytics.trend.map((point) => point.count), 1);
   const points = analytics.trend
     .map((point, index) => `${(index / Math.max(analytics.trend.length - 1, 1)) * 100},${64 - (point.count / max) * 52}`)
@@ -79,7 +81,7 @@ function TrendCard({ analytics }: AnalyticsStripProps) {
   );
 }
 
-function StateCard({ analytics }: AnalyticsStripProps) {
+function StateCard({ analytics }: Pick<AnalyticsStripProps, "analytics">) {
   const max = Math.max(...analytics.roles_by_state.map((state) => state.count), 1);
   return (
     <article className="chart-card state-card">
@@ -98,18 +100,31 @@ function StateCard({ analytics }: AnalyticsStripProps) {
   );
 }
 
-function PayDistribution({ analytics }: AnalyticsStripProps) {
+function PayDistribution({ analytics, onPayBucketSelect }: AnalyticsStripProps) {
   const max = Math.max(...analytics.pay_distribution.map((bucket) => bucket.count), 1);
   return (
     <article className="chart-card pay-card">
       <h3>Pay distribution (Hourly)</h3>
       <div className="histogram">
-        {analytics.pay_distribution.map((bucket) => (
-          <span key={bucket.bucket}>
-            <i style={{ height: `${Math.max(12, (bucket.count / max) * 82)}%` }} />
-            <small>{bucket.bucket}</small>
-          </span>
-        ))}
+        {analytics.pay_distribution.map((bucket) => {
+          const payBucket = payBucketByLabel(String(bucket.bucket));
+          const bucketLabel = payBucket?.label ?? `${bucket.bucket}/hr`;
+          const count = Number(bucket.count);
+          return (
+            <button
+              key={bucket.bucket}
+              type="button"
+              className="histogram-bar"
+              disabled={count === 0}
+              aria-label={`Open ${bucketLabel} pay bucket with ${count} ${count === 1 ? "role" : "roles"}`}
+              onClick={() => onPayBucketSelect(String(bucket.bucket))}
+            >
+              <i style={{ height: `${Math.max(12, (count / max) * 82)}%` }} />
+              <small>{bucket.bucket}</small>
+              <strong>{count}</strong>
+            </button>
+          );
+        })}
       </div>
     </article>
   );

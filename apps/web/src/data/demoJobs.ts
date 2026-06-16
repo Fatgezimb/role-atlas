@@ -1,4 +1,5 @@
 import type { AnalyticsSummary, Job, MapMarker, SearchFilters, SearchResponse } from "../types";
+import { hourlyEquivalent, PAY_BUCKETS } from "../lib/payBuckets";
 import { STATE_COORDS } from "./stateGeo";
 
 const now = new Date("2026-06-16T12:00:00Z").toISOString();
@@ -651,16 +652,9 @@ function median(values: number[]): number | null {
 }
 
 function buildPayDistribution(jobs: Job[]): Array<{ bucket: string; count: number }> {
-  const buckets = [
-    { bucket: "$70", min: 70, max: 79, count: 0 },
-    { bucket: "$80", min: 80, max: 89, count: 0 },
-    { bucket: "$90", min: 90, max: 99, count: 0 },
-    { bucket: "$100", min: 100, max: 109, count: 0 },
-    { bucket: "$110", min: 110, max: 119, count: 0 },
-    { bucket: "$120+", min: 120, max: Infinity, count: 0 }
-  ];
+  const buckets = PAY_BUCKETS.map((bucket) => ({ ...bucket, count: 0 }));
   for (const job of jobs) {
-    const hourly = job.hourly_max ?? (job.salary_max ? Math.round(job.salary_max / 2080) : null);
+    const hourly = hourlyEquivalent(job);
     const bucket = hourly ? buckets.find((item) => hourly >= item.min && hourly <= item.max) : null;
     if (bucket) {
       bucket.count += 1;
